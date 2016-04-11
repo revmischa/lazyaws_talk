@@ -1,0 +1,131 @@
+# Sample Udo configuration file
+
+# You should copy this into your application's root 
+# directory and name it udo.yml
+
+
+# what's your awesome application or company called?
+app_name: myapp
+
+
+# your yum repo that houses your RPMs
+repo:
+    # use yum-s3-iam plugin to access our private s3 repo with an instance role
+    plugin_url: https://s3-us-west-2.amazonaws.com/myapp-pub/provision/yum-plugin-s3-iam-1.0-1.noarch.rpm
+# yum repo URL
+repo_url: https://s3-us-west-2.amazonaws.com/myapp-yum/prod/repo
+
+### global defaults for all clusters/roles
+region: 'us-west-2'  # what region are we working in here? (Oregon, yo)
+availability_zones:
+    - 'us-west-2a'
+ami: 'ami-a99deb89'  # AMI to use for all instances (unless overridden)
+packages:            # common packages to install for all instances
+    - 'myapp-base'
+
+# display extra API call information
+# useful if you want to find out why something is failing
+debug: 0
+
+# optional: slack integration webhook
+slack:
+    url: https://myapp.slack.com/services/hooks/incoming-webhook?token=Zgasdlgj0ioj30tj
+    username: UdoBot
+    channel: '#notdevops'
+    icon_emoji: ':ship:'
+
+
+### CLOUD-INIT
+
+# note: cloud_init_* is baked into LaunchConfigurations.
+# to apply changes you must reload your LaunchConfigurations
+# or use the 'update-lc' command
+
+# add some additional cloud-init script commands before installing packages
+cloud_init_pre: |
+    touch /root/myapp_init
+    # install AWS CLI tools
+    yum install -y aws-cli
+
+# run after your packages are installed
+# note: it's a good idea to install the CodeDeploy agent last, because
+# autoscaling lifecycle hooks to deploy on instance creation will do a
+# deploy straight away, so you want your dependencies in place when that happens
+cloud_init_post: |
+    # install CodeDeploy agent
+    cd /home/ec2-user
+    aws s3 cp s3://aws-codedeploy-us-west-2/latest/install . --region us-west-2
+    chmod +x ./install
+    ./install auto
+    rm install
+
+
+# CodeDeploy
+# 'application' and 'group' should reference existing configurations
+# http://docs.aws.amazon.com/codedeploy/latest/userguide/welcome.html
+deploy:
+    application: 'MyCompany'
+    github:
+        repo: 'mycompany/myapp' # GH repo name
+
+# cluster = set of AWS resources managed as a group
+# (instances, ASgroup, launchconfigs, all in a VPC)
+clusters:
+    # create a "development" cluster
+    dev:
+        # human-readable name
+        description: "Development"
+        # override default
+        repo_url: https://s3-us-west-2.amazonaws.com/myapp-yum/dev/repo
+        # yum packages to install
+        packages:
+            - 'myapp-prov-dev'
+            - 'myapp-cfg-dev'
+        keypair_name: 'dev'
+        subnets_cidr: 
+            - '10.10.0.0/16'
+            - '10.20.0.0/16'
+        # for instance roles
+        iam_profile: 'developer'
+        # optional
+        tenancy: 'dedicated'  # VPC 'default' or 'dedicated' hardware
+        # application roles for instances
+        # (sub-clusters that can be managed as distinct sets)
+        roles:
+            webapp:
+                instance_type: 'm3.medium'
+                scale_policy:
+                    min_size: 1
+                    max_size: 3
+                    desired: 2
+                elbs:
+                    - 'dev-https'
+                security_groups:
+                    - 'sg-abcdef123'  # you'll want to set this up manually
+                packages:
+                    - 'myapp-app'
+                    - 'myapp-app-deps'
+                    - 'myapp-app-core'
+                    - 'myapp-static'
+                tags:
+                    'myapp-web-workers': 10
+                deployment_group: 'dev-webapp'  # CodeDeploy DeploymentGroup name
+            worker:
+                # you can stick cloud_init_extra on clusters/roles to run a custom script
+                cloud_init_extra: |
+                    curl --silent --location https://rpm.nodesource.com/setup | bash -  # NPM yum
+                instance_type: 'm1.medium'
+                packages:
+                    - 'myapp-schwartz-worker'
+                    - 'myapp-daemon-worker'
+                scale_policy:
+                    min_size: 1
+                    max_size: 4
+                    desired: 1
+                deployment_group: 'dev-worker'
+    qa:
+        # ...
+    stage:
+        # ...
+    prod:
+        # ...

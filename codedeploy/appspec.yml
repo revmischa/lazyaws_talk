@@ -1,0 +1,105 @@
+# This is an appspec.yml template file for use with AWS CodeDeploy.
+# For help completing this file, see the "AppSpec File Reference" in the  
+#   "AWS CodeDeploy User Guide" at
+#   http://docs.aws.amazon.com/codedeploy/latest/userguide/app-spec-ref.html
+
+#"The version section of the AppSpec file indicates the version of your application. 
+# It is required. Currently the only allowed value is 0.0."
+version: 0.0
+os: linux 
+# During the Install deployment lifecycle event (which occurs between the 
+#   BeforeInstall and AfterInstall events), copy the specified files 
+#   in "source" starting from the root of the revision's file bundle 
+#   to "destination" on the instance.
+# Specify multiple "source" and "destination" pairs if you want to copy 
+#   from multiple sources or to multiple destinations.
+# If you are not copying any files to the instance, then remove the
+#   "files" section altogether. A blank or incomplete "files" section
+#   may cause associated deployments to fail.
+files:
+  - source: /
+    destination: /myapp/app
+# For deployments to Amazon Linux and Ubuntu Server instances,
+#   you can specify a "permissions" 
+#   section here that describes special permissions to apply to the files 
+#   in the "files" section as they are being copied over to 
+#   the instance.
+#   For more information, see the documentation.
+# (if you can avoid running as ec2-user that is a good idea)
+permissions:
+  - object: /myapp/
+    pattern: "**"
+    except:
+    owner: ec2-user
+    group: ec2-user
+    mode: 
+# If you are not running any commands on the instance, then remove 
+#   the "hooks" section altogether. A blank or incomplete "hooks" section
+#   may cause associated deployments to fail.
+hooks:
+# For each deployment lifecycle event, specify multiple "location" entries 
+#   if you want to run multiple scripts during that event.
+# You can specify "timeout" as the number of seconds to wait until failing the deployment 
+#   if the specified scripts do not run within the specified time limit for the 
+#   specified event. For example, 900 seconds is 15 minutes. If not specified, 
+#   the default is 1800 seconds (30 minutes).
+#   Note that the maximum amount of time that all scripts must finish executing 
+#   for each individual deployment lifecycle event is 3600 seconds (1 hour). 
+#   Otherwise, the deployment will stop and AWS CodeDeploy will consider the deployment
+#   to have failed to the instance. Make sure that the total number of seconds 
+#   that are specified in "timeout" for all scripts in each individual deployment 
+#   lifecycle event does not exceed a combined 3600 seconds (1 hour).
+# For deployments to Amazon Linux and Ubuntu Server  instances,
+#   you can specify "runas" in an event to
+#   run as the specified user. For more information, see the documentation.
+#   If you are deploying to Windows Server instances,
+#   remove "runas" altogether.
+# If you do not want to run any commands during a particular deployment
+#   lifecycle event, remove that event declaration altogether. Blank or 
+#   incomplete event declarations may cause associated deployments to fail.
+# During the ApplicationStop deployment lifecycle event, run the commands 
+#   in the script specified in "location" starting from the root of the 
+#   revision's file bundle.
+  ApplicationStop:
+    - location: deploy/stop_app.sh
+      timeout: 300
+      runas: root
+# During the BeforeInstall deployment lifecycle event, run the commands 
+#   in the script specified in "location".
+  BeforeInstall:
+    - location: deploy/write_asg_to_host.py
+      timeout: 20
+      runas: root
+    - location: deploy/clean_cache.sh
+      timeout: 20
+      runas: ec2-user
+    - location: deploy/yum_update.sh
+      timeout: 200
+      runas: root
+    - location: deploy/prep_install.sh
+      timeout: 20
+      runas: ec2-user
+    - location: deploy/customize_ec2-user_bash_prompt.sh
+      timeout: 20
+      runas: ec2-user
+# During the AfterInstall deployment lifecycle event, run the commands 
+#   in the script specified in "location".
+  AfterInstall:
+    - location: deploy/build_static.sh
+      timeout: 120
+      runas: ec2-user
+    - location: deploy/post_install.sh
+      timeout: 300
+      runas: ec2-user
+# During the ApplicationInstall deployment lifecycle event, run the commands 
+#   in the script specified in "location".
+  ApplicationStart:
+    - location: deploy/start_app.sh
+      timeout: 90
+      runas: root
+# During the ValidateService deployment lifecycle event, run the commands 
+#   in the script specified in "location".
+  ValidateService:
+    - location: deploy/validate.sh
+      timeout: 60
+      runas: ec2-user
